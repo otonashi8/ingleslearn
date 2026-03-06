@@ -1,10 +1,10 @@
+import os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from groq import Groq
 from gtts import gTTS
 import base64
 import io
-import os
 import random
 from dotenv import load_dotenv
 
@@ -12,19 +12,33 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-# Configuración
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+# === VERIFICACIÓN DE API KEY (MEJORADO) ===
+api_key = os.getenv("GROQ_API_KEY")
+if not api_key:
+    print("🚨 ERROR CRÍTICO: GROQ_API_KEY no está configurada")
+    print("💡 Solución: Agrega la variable en Render → Environment → GROQ_API_KEY")
+    # No detenemos la app, pero imprimimos error
+else:
+    print(f"✅ API key de Groq configurada correctamente (termina en ...{api_key[-4:]})")
 
-# Lista de palabras (copia la misma de tu desktop)
+# Inicializar cliente (solo si hay key, si no, será None)
+client = Groq(api_key=api_key) if api_key else None
+
+# Lista de palabras (ampliada)
 vocabulary_words = [
     {"es": "gobierno", "en": "government", "contexto": "El nuevo gobierno anunció cambios."},
     {"es": "casa", "en": "house", "contexto": "Vivo en una casa grande."},
     {"es": "perro", "en": "dog", "contexto": "El perro ladra mucho."},
     {"es": "comida", "en": "food", "contexto": "La comida está deliciosa."},
     {"es": "agua", "en": "water", "contexto": "Necesito beber agua."},
-    # Agrega todas las palabras de tu lista
+    {"es": "trabajo", "en": "work", "contexto": "Voy a mi trabajo todas las mañanas."},
+    {"es": "escuela", "en": "school", "contexto": "Los niños van a la escuela."},
+    {"es": "amigo", "en": "friend", "contexto": "Mi amigo es muy divertido."},
+    {"es": "familia", "en": "family", "contexto": "Mi familia es grande."},
+    {"es": "ciudad", "en": "city", "contexto": "La ciudad es muy ruidosa."},
 ]
 
+# Historial de conversación
 conversation_history = [{
     "role": "system",
     "content": """
@@ -50,10 +64,14 @@ Rules:
 
 @app.route('/')
 def home():
-    return "EnglishLearn API is running!"
+    return "EnglishLearn API is running! 🚀"
 
 @app.route('/api/hablar', methods=['POST'])
 def hablar():
+    # Verificar que el cliente Groq está disponible
+    if not client:
+        return jsonify({'error': 'API key de Groq no configurada'}), 500
+    
     data = request.json
     user_text = data.get('text', '')
     
@@ -104,7 +122,7 @@ def hablar():
         return jsonify({
             'english': english,
             'spanish': spanish,
-            'suggestions': suggestions[:4],  # Máximo 4 sugerencias
+            'suggestions': suggestions[:4],
             'audio': audio_base64
         })
         
@@ -117,4 +135,5 @@ def quiz():
     return jsonify(word)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)))
+    port = int(os.getenv('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
