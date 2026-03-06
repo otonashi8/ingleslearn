@@ -13,8 +13,11 @@ const connectionStatus = document.getElementById('connectionStatus');
 let isListening = false;
 let recognition = null;
 let lastActivity = Date.now();
-let quizInterval = null;
 let conversationHistory = [];
+
+// === VARIABLES DEL QUIZ ===
+let quizActive = false;
+let currentQuizWord = null;
 
 // Verificar conexión con el backend
 async function checkConnection() {
@@ -62,7 +65,10 @@ if ('webkitSpeechRecognition' in window) {
     recognition.onresult = async (event) => {
         const text = event.results[0][0].transcript;
         addMessage('user', text, '');
-        
+
+        // === VERIFICAR SI ES RESPUESTA AL QUIZ ===
+        if (checkQuizAnswer(text)) return;
+
         status.textContent = '🤔 Pensando...';
         
         try {
@@ -165,46 +171,82 @@ function displaySuggestions(suggestions) {
     });
 }
 
-// Verificar inactividad para quiz
+// === QUIZ DE VOCABULARIO ===
 async function checkInactivity() {
     const inactive = (Date.now() - lastActivity) / 1000;
-    
-    if (inactive > 300 && !quizContainer.style.display === 'block') { // 5 minutos
-        try {
-            const response = await fetch(`${CONFIG.API_URL}/api/quiz`);
-            const word = await response.json();
-            
-            quizContainer.style.display = 'block';
-            quizContent.innerHTML = `
-                <p><strong>📝 PALABRA: ${word.es}</strong></p>
-                <p>📖 ${word.contexto}</p>
-                <p>🎤 Presiona el botón y di cómo se dice en inglés...</p>
-            `;
-            
-            // Reproducir pregunta
-            const audioResponse = await fetch(`${CONFIG.API_URL}/api/hablar`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    text: `Quick quiz! How do you say ${word.es} in English? ${word.contexto}`
-                })
-            });
-            const audioData = await audioResponse.json();
-            if (audioData.audio) {
-                new Audio('data:audio/mp3;base64,' + audioData.audio).play();
-            }
-            
-        } catch (error) {
-            console.error('Error en quiz:', error);
-        }
+
+    if (inactive > 300 && !quizActive) { // 300 segundos = 5 minutos
+        await startQuiz();
     }
+}
+
+async function startQuiz() {
+    quizActive = true;
+
+    try {
+        const response = await fetch(`${CONFIG.API_URL}/api/quiz`);
+        currentQuizWord = await response.json();
+
+        // Mostrar quiz en pantalla
+        quizContainer.style.display = 'block';
+        quizContent.innerHTML = `
+            <p><strong>📝 ¿Cómo se dice en inglés?</strong></p>
+            <p style="font-size: 1.5rem; margin: 10px 0;">🇪🇸 <strong>${currentQuizWord.es}</strong></p>
+            <p style="opacity: 0.8;">📖 ${currentQuizWord.contexto}</p>
+            <p style="margin-top: 10px;">🎤 Presiona el botón y di la palabra en inglés...</p>
+        `;
+
+        // Reproducir pregunta por audio
+        const audioResponse = await fetch(`${CONFIG.API_URL}/api/hablar`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                text: `Quick vocabulary quiz! How do you say "${currentQuizWord.es}" in English? Here is some context: ${currentQuizWord.contexto}`
+            })
+        });
+        const audioData = await audioResponse.json();
+        if (audioData.audio) {
+            new Audio('data:audio/mp3;base64,' + audioData.audio).play();
+        }
+
+    } catch (error) {
+        console.error('Error en quiz:', error);
+        quizActive = false;
+    }
+}
+
+function checkQuizAnswer(userAnswer) {
+    if (!quizActive || !currentQuizWord) return false;
+
+    const answer = userAnswer.toLowerCase().trim();
+    const correct = currentQuizWord.en.toLowerCase().trim();
+
+    // Ocultar quiz
+    quizContainer.style.display = 'none';
+    quizActive = false;
+    lastActivity = Date.now();
+
+    if (answer.includes(correct) || correct.includes(answer)) {
+        addMessage('tutor',
+            `✅ Correct! "${currentQuizWord.es}" = "${currentQuizWord.en}". Well done!`,
+            `✅ ¡Correcto! "${currentQuizWord.es}" = "${currentQuizWord.en}". ¡Muy bien!`
+        );
+    } else {
+        addMessage('tutor',
+            `📚 Good try! "${currentQuizWord.es}" in English is "${currentQuizWord.en}". ${currentQuizWord.contexto}`,
+            `📚 ¡Buen intento! "${currentQuizWord.es}" en inglés es "${currentQuizWord.en}".`
+        );
+    }
+
+    currentQuizWord = null;
+    return true;
 }
 
 // Inicializar
 async function init() {
     const connected = await checkConnection();
     if (connected) {
-        // Verificar cada minuto
+        // Verificar inactividad cada minuto
         setInterval(checkInactivity, 60000);
         // Verificar conexión cada 30 segundos
         setInterval(checkConnection, 30000);
