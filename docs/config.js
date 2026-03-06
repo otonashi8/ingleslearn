@@ -1,10 +1,6 @@
 // CONFIGURACIÓN - CAMBIA ESTO CUANDO TENGAS TU BACKEND EN RENDER
 const CONFIG = {
-    // DESPUÉS DE DESPLEGAR EN RENDER, cambia esta URL
-    API_URL: 'https://ingleslearn-api.onrender.com', // Temporal para pruebas locales
-    
-    // Cuando tengas el backend en Render, será algo como:
-    // API_URL: 'https://ingleslearn-api.onrender.com'
+    API_URL: 'https://ingleslearn-api.onrender.com'
 };
 
 // No cambiar esto
@@ -13,3 +9,4 @@ if (window.location.hostname !== 'localhost' && window.location.hostname !== '12
     CONFIG.API_URL = `https://${window.location.hostname.replace('frontend', 'api')}`;
 
 }
+
