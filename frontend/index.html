@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EnglishLearn - Tutor de Inglés por Voz</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="assets/favicon.ico" type="image/x-icon">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1>🇺🇸 EnglishLearn</h1>
+            <p class="subtitle">Tu tutor de inglés con IA - 100% por voz</p>
+        </header>
+
+        <!-- Estado de conexión -->
+        <div class="connection-status" id="connectionStatus">
+            🔌 Conectando al servidor...
+        </div>
+
+        <!-- Botón principal -->
+        <div class="mic-container">
+            <button id="micButton" class="mic-button" disabled>
+                <svg class="mic-icon" viewBox="0 0 24 24">
+                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                    <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                </svg>
+                <span class="mic-text" id="micText">Conectando...</span>
+            </button>
+            <div class="status" id="status">🎤 Inicializando...</div>
+        </div>
+
+        <!-- Área de chat -->
+        <div class="chat-container" id="chatContainer">
+            <div class="message tutor">
+                <div class="message-content">
+                    Hello! I'm your English tutor. Press the button and speak!
+                    <div class="message-translation">¡Hola! Soy tu tutor. Presiona el botón y habla.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sugerencias -->
+        <div class="suggestions-container" id="suggestions" style="display: none;">
+            <h3>💡 Sugerencias para responder:</h3>
+            <div class="suggestions-grid" id="suggestionsGrid"></div>
+        </div>
+
+        <!-- Quiz -->
+        <div class="quiz-container" id="quizContainer" style="display: none;">
+            <h3>⏰ ¡QUIZ DE VOCABULARIO!</h3>
+            <div id="quizContent"></div>
+        </div>
+
+        <!-- Footer -->
+        <footer>
+            <p>⏰ Quiz automático cada 5 minutos sin hablar | 🎤 Presiona el botón para hablar</p>
+        </footer>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
