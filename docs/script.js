@@ -1,8 +1,7 @@
 // ==========================================
-// EnglishLearn - Script mejorado
+// EnglishLearn - script.js (versión corregida)
 // ==========================================
 
-// Elementos del DOM
 const micButton = document.getElementById('micButton');
 const micText = document.getElementById('micText');
 const status = document.getElementById('status');
@@ -11,19 +10,21 @@ const suggestionsContainer = document.getElementById('suggestions');
 const suggestionsGrid = document.getElementById('suggestionsGrid');
 const connectionStatus = document.getElementById('connectionStatus');
 
-// Estado
 let isListening = false;
 let recognition = null;
 let sessionId = 'session_' + Date.now();
-let wordNotifInterval = null;
 let isProcessing = false;
+let hasSpoken = false;       // Solo empezar palabras cuando el usuario habló
+let wordInterval = null;
 
 // ==========================================
-// CONEXIÓN AL BACKEND
+// CONEXIÓN
 // ==========================================
 async function checkConnection() {
     try {
-        const response = await fetch(`${CONFIG.API_URL}/`, { signal: AbortSignal.timeout(8000) });
+        const response = await fetch(`${CONFIG.API_URL}/`, {
+            signal: AbortSignal.timeout(10000)
+        });
         if (response.ok) {
             connectionStatus.textContent = '✅ Conectado';
             connectionStatus.className = 'connection-status connected';
@@ -32,27 +33,26 @@ async function checkConnection() {
             status.textContent = 'Listo — presiona el botón y habla en inglés';
             return true;
         }
-    } catch (error) {
-        connectionStatus.textContent = '❌ Sin conexión al servidor';
+    } catch (e) {
+        connectionStatus.textContent = '❌ Sin conexión — Render puede tardar ~30s en despertar';
         connectionStatus.className = 'connection-status error';
         micButton.disabled = true;
-        micText.textContent = '⏳ Servidor no disponible';
-        status.textContent = 'No se puede conectar. Render puede tardar ~30s en despertar.';
-        return false;
+        micText.textContent = '⏳ Esperando servidor...';
+        status.textContent = 'Intenta recargar la página en unos segundos';
     }
+    return false;
 }
 
 // ==========================================
-// RECONOCIMIENTO DE VOZ
+// VOZ
 // ==========================================
 function initRecognition() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-        status.textContent = '❌ Tu navegador no soporta reconocimiento de voz. Usa Chrome.';
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+        status.textContent = '❌ Tu navegador no soporta voz. Usa Chrome.';
         return;
     }
-
-    recognition = new SpeechRecognition();
+    recognition = new SR();
     recognition.continuous = false;
     recognition.interimResults = false;
     recognition.lang = 'en-US';
@@ -61,13 +61,15 @@ function initRecognition() {
         isListening = true;
         micButton.classList.add('listening');
         micText.textContent = '🎤 ESCUCHANDO...';
-        status.textContent = '🎤 Habla ahora en inglés...';
+        status.textContent = 'Habla ahora en inglés...';
     };
 
     recognition.onend = () => {
         isListening = false;
         micButton.classList.remove('listening');
-        micText.textContent = isProcessing ? '⏳ Procesando...' : '🎤 PRESIONA PARA HABLAR';
+        if (!isProcessing) {
+            micText.textContent = '🎤 PRESIONA PARA HABLAR';
+        }
     };
 
     recognition.onresult = async (event) => {
@@ -78,69 +80,84 @@ function initRecognition() {
     recognition.onerror = (event) => {
         isListening = false;
         micButton.classList.remove('listening');
+        micText.textContent = '🎤 PRESIONA PARA HABLAR';
         if (event.error === 'no-speech') {
-            status.textContent = 'No escuché nada. Intenta de nuevo.';
+            status.textContent = 'No escuché nada — intenta de nuevo';
         } else if (event.error === 'not-allowed') {
-            status.textContent = '❌ Permiso de micrófono denegado. Actívalo en tu navegador.';
+            status.textContent = '❌ Permiso de micrófono denegado. Actívalo en configuración del navegador.';
         } else {
-            status.textContent = '❌ Error: ' + event.error;
+            status.textContent = 'Error de voz: ' + event.error;
         }
     };
 }
 
 // ==========================================
-// ENVIAR MENSAJE AL TUTOR
+// ENVIAR MENSAJE
 // ==========================================
 async function sendMessage(text) {
-    if (!text.trim() || isProcessing) return;
+    if (!text || !text.trim() || isProcessing) return;
 
     isProcessing = true;
     micButton.disabled = true;
     micText.textContent = '⏳ Procesando...';
-
-    // Mostrar lo que el usuario dijo
-    addUserMessage(text);
-    status.textContent = '🤔 Tu tutor está pensando...';
+    status.textContent = 'Tu tutor está pensando...';
     hideSuggestions();
 
+    addUserMessage(text);
+
     try {
-        const response = await fetch(`${CONFIG.API_URL}/api/hablar`, {
+        const res = await fetch(`${CONFIG.API_URL}/api/hablar`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, session_id: sessionId })
+            body: JSON.stringify({ text: text.trim(), session_id: sessionId }),
+            signal: AbortSignal.timeout(30000)
         });
 
-        if (!response.ok) throw new Error('Error en el servidor');
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || `Error ${res.status}`);
+        }
 
-        const data = await response.json();
+        const data = await res.json();
 
-        // Mostrar corrección si hay error
-        if (data.correction && data.correction.trim()) {
+        // Corrección primero (si hay)
+        if (data.correction && data.correction.trim() && data.correction.toUpperCase() !== 'NONE') {
             addCorrectionMessage(data.correction);
         }
 
-        // Mostrar respuesta del tutor
+        // Respuesta del tutor
         if (data.english) {
-            addTutorMessage(data.english, data.spanish);
+            addTutorMessage(data.english, data.spanish || '');
         }
 
-        // Mostrar sugerencias de RESPUESTA
+        // Sugerencias de respuesta
         if (data.suggestions && data.suggestions.length > 0) {
             displaySuggestions(data.suggestions);
         }
 
-        // Reproducir audio
+        // Audio
         if (data.audio) {
-            const audio = new Audio('data:audio/mp3;base64,' + data.audio);
-            audio.play();
+            try {
+                const audio = new Audio('data:audio/mp3;base64,' + data.audio);
+                audio.play();
+            } catch (e) { /* audio error silencioso */ }
+        }
+
+        // Activar palabras de práctica después de primera interacción
+        if (!hasSpoken) {
+            hasSpoken = true;
+            startWordNotifications();
         }
 
         status.textContent = '🎤 Presiona para responder';
 
-    } catch (error) {
-        console.error('Error:', error);
-        status.textContent = '❌ Error de conexión. Intenta de nuevo.';
-        addTutorMessage("Sorry, I had a connection problem. Try again!", "Lo siento, tuve un problema de conexión. ¡Intenta de nuevo!");
+    } catch (err) {
+        console.error('Error sendMessage:', err);
+        status.textContent = '❌ Error: ' + err.message;
+        addTutorMessage(
+            "Sorry, there was a connection problem. Please try again!",
+            "Lo siento, hubo un problema de conexión. ¡Intenta de nuevo!"
+        );
     } finally {
         isProcessing = false;
         micButton.disabled = false;
@@ -149,82 +166,90 @@ async function sendMessage(text) {
 }
 
 // ==========================================
-// MENSAJES EN EL CHAT
+// MENSAJES
 // ==========================================
 function addUserMessage(text) {
-    const div = document.createElement('div');
-    div.className = 'message user';
-    div.innerHTML = `
-        <div class="message-content">
-            <span class="message-label">Tú</span>
-            ${escapeHtml(text)}
-        </div>`;
-    chatContainer.appendChild(div);
+    const d = document.createElement('div');
+    d.className = 'message user';
+    d.innerHTML = `<div class="message-content">
+        <span class="message-label">Tú</span>
+        ${esc(text)}
+    </div>`;
+    chatContainer.appendChild(d);
     scrollChat();
 }
 
 function addTutorMessage(english, spanish) {
-    const div = document.createElement('div');
-    div.className = 'message tutor';
-    div.innerHTML = `
-        <div class="message-content">
-            <span class="message-label">🎓 Tutor</span>
-            ${escapeHtml(english)}
-            ${spanish ? `<div class="message-translation">📚 ${escapeHtml(spanish)}</div>` : ''}
-        </div>`;
-    chatContainer.appendChild(div);
+    const d = document.createElement('div');
+    d.className = 'message tutor';
+    d.innerHTML = `<div class="message-content">
+        <span class="message-label">🎓 Tutor</span>
+        ${esc(english)}
+        ${spanish ? `<div class="message-translation">📚 ${esc(spanish)}</div>` : ''}
+    </div>`;
+    chatContainer.appendChild(d);
     scrollChat();
 }
 
-function addCorrectionMessage(correction) {
-    const div = document.createElement('div');
-    div.className = 'message correction';
-    div.innerHTML = `
-        <div class="message-content">
-            <span class="message-label">✏️ Corrección</span>
-            ${escapeHtml(correction)}
-        </div>`;
-    chatContainer.appendChild(div);
+function addCorrectionMessage(text) {
+    const d = document.createElement('div');
+    d.className = 'message correction';
+    d.innerHTML = `<div class="message-content">
+        <span class="message-label">✏️ Corrección</span>
+        ${esc(text)}
+    </div>`;
+    chatContainer.appendChild(d);
     scrollChat();
 }
 
 function addWordNotif(word) {
-    const div = document.createElement('div');
-    div.className = 'message word-notif';
-    div.innerHTML = `
-        <div class="message-content">
-            <span class="message-label">💬 Palabra para practicar</span>
-            ¿Cómo se dice <strong>"${escapeHtml(word.es)}"</strong> en inglés?
-            <div class="message-translation">💡 Contexto: ${escapeHtml(word.contexto)}</div>
-            <button class="reveal-btn" onclick="revealWord(this, '${escapeHtml(word.en)}')">Ver respuesta</button>
-        </div>`;
-    chatContainer.appendChild(div);
+    const id = 'w_' + Date.now();
+    const d = document.createElement('div');
+    d.className = 'message word-notif';
+    d.id = id;
+    d.innerHTML = `<div class="message-content">
+        <span class="message-label">💬 Palabra para practicar</span>
+        ¿Cómo se dice <strong>"${esc(word.es)}"</strong> en inglés?
+        <div class="message-translation">💡 Contexto: ${esc(word.contexto)}</div>
+        <button class="reveal-btn" onclick="revealWord('${id}', '${esc(word.en)}')">Ver respuesta</button>
+    </div>`;
+    chatContainer.appendChild(d);
     scrollChat();
 }
 
-function revealWord(btn, answer) {
-    btn.parentElement.innerHTML += `<div class="revealed">✅ <strong>${answer}</strong></div>`;
-    btn.remove();
+function revealWord(id, answer) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const btn = el.querySelector('.reveal-btn');
+    if (btn) btn.remove();
+    const rev = document.createElement('div');
+    rev.className = 'revealed';
+    rev.innerHTML = `✅ <strong>${esc(answer)}</strong>`;
+    el.querySelector('.message-content').appendChild(rev);
 }
 
 // ==========================================
-// SUGERENCIAS (respuestas al tutor)
+// SUGERENCIAS
 // ==========================================
 function displaySuggestions(suggestions) {
     suggestionsGrid.innerHTML = '';
     suggestionsContainer.style.display = 'block';
 
-    suggestions.forEach(suggestion => {
-        const parts = suggestion.split('|');
-        const english = parts[0].replace(/^\d+\.\s*/, '').trim();
-        const spanish = parts[1] ? parts[1].trim() : '';
+    suggestions.forEach(s => {
+        // Limpiar número al inicio: "1. texto | traduccion"
+        const clean = s.replace(/^\d+\.\s*/, '');
+        const parts = clean.split('|');
+        const eng = parts[0].trim();
+        const esp = parts[1] ? parts[1].trim() : '';
+
+        if (!eng) return;
 
         const card = document.createElement('div');
         card.className = 'suggestion-card';
-        card.onclick = () => sendMessage(english);
+        card.onclick = () => sendMessage(eng);
         card.innerHTML = `
-            <div class="suggestion-english">${escapeHtml(english)}</div>
-            ${spanish ? `<div class="suggestion-spanish">${escapeHtml(spanish)}</div>` : ''}
+            <div class="suggestion-english">${esc(eng)}</div>
+            ${esp ? `<div class="suggestion-spanish">${esc(esp)}</div>` : ''}
         `;
         suggestionsGrid.appendChild(card);
     });
@@ -236,46 +261,27 @@ function hideSuggestions() {
 }
 
 // ==========================================
-// NOTIFICACIONES DE PALABRAS
+// PALABRAS DE PRÁCTICA (solo después de hablar)
 // ==========================================
 async function showWordNotification() {
     try {
-        const response = await fetch(`${CONFIG.API_URL}/api/palabra-del-dia`);
-        const word = await response.json();
+        const res = await fetch(`${CONFIG.API_URL}/api/palabra-del-dia`);
+        if (!res.ok) return;
+        const word = await res.json();
         addWordNotif(word);
     } catch (e) {
-        console.error('Error cargando palabra:', e);
+        console.error('Error palabra:', e);
     }
 }
 
-function startWordNotifications(intervalMinutes = 3) {
-    // Primera palabra a los 2 minutos de inactividad
-    if (wordNotifInterval) clearInterval(wordNotifInterval);
-    wordNotifInterval = setInterval(showWordNotification, intervalMinutes * 60 * 1000);
+function startWordNotifications() {
+    if (wordInterval) return; // ya está corriendo
+    // Primera palabra a los 3 minutos, luego cada 3 min
+    wordInterval = setInterval(showWordNotification, 3 * 60 * 1000);
 }
 
 // ==========================================
-// CONTROLES DEL BOTÓN
-// ==========================================
-micButton.addEventListener('click', () => {
-    if (!recognition) return;
-    if (isListening) {
-        recognition.stop();
-    } else if (!isProcessing) {
-        recognition.start();
-    }
-});
-
-// Permitir escribir también (tecla Enter en un input oculto activable)
-document.addEventListener('keydown', (e) => {
-    if (e.key === ' ' && document.activeElement.tagName !== 'INPUT') {
-        e.preventDefault();
-        micButton.click();
-    }
-});
-
-// ==========================================
-// BOTÓN RESET
+// RESET
 // ==========================================
 document.getElementById('resetBtn')?.addEventListener('click', async () => {
     try {
@@ -285,14 +291,37 @@ document.getElementById('resetBtn')?.addEventListener('click', async () => {
             body: JSON.stringify({ session_id: sessionId })
         });
     } catch (e) {}
+
+    // Nuevo sessionId
     sessionId = 'session_' + Date.now();
+    hasSpoken = false;
+    if (wordInterval) { clearInterval(wordInterval); wordInterval = null; }
+
     chatContainer.innerHTML = '';
     hideSuggestions();
     addTutorMessage(
-        "Hello! I'm your English tutor. Let's start fresh! Tell me, how are you today?",
-        "¡Hola! Soy tu tutor de inglés. ¡Empecemos de nuevo! Cuéntame, ¿cómo estás hoy?"
+        "Hello! Let's start a new conversation. How are you today?",
+        "¡Hola! Empecemos una nueva conversación. ¿Cómo estás hoy?"
     );
-    status.textContent = '🎤 Presiona para hablar';
+    status.textContent = 'Listo — presiona el botón y habla en inglés';
+});
+
+// Botón de palabra manual
+document.getElementById('wordBtn')?.addEventListener('click', showWordNotification);
+
+// ==========================================
+// BOTÓN MIC
+// ==========================================
+micButton.addEventListener('click', () => {
+    if (!recognition) {
+        status.textContent = '❌ Reconocimiento de voz no disponible. Usa Chrome.';
+        return;
+    }
+    if (isListening) {
+        recognition.stop();
+    } else if (!isProcessing) {
+        try { recognition.start(); } catch (e) { status.textContent = 'Error al activar micrófono: ' + e.message; }
+    }
 });
 
 // ==========================================
@@ -302,29 +331,25 @@ function scrollChat() {
     chatContainer.scrollTop = chatContainer.scrollHeight;
 }
 
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+function esc(text) {
+    if (!text) return '';
+    const d = document.createElement('div');
+    d.textContent = String(text);
+    return d.innerHTML;
 }
 
 // ==========================================
-// INICIALIZAR
+// INIT
 // ==========================================
 async function init() {
     initRecognition();
-    const connected = await checkConnection();
-    if (connected) {
-        startWordNotifications(3); // Palabra cada 3 minutos
-        setInterval(checkConnection, 60000); // Re-chequear conexión cada 1 minuto
-    } else {
-        // Reintentar conexión cada 15 segundos si falla (Render cold start)
-        const retryInterval = setInterval(async () => {
-            const ok = await checkConnection();
-            if (ok) {
-                clearInterval(retryInterval);
-                startWordNotifications(3);
-            }
+    const ok = await checkConnection();
+
+    if (!ok) {
+        // Render duerme — reintentar cada 15s
+        const retry = setInterval(async () => {
+            const connected = await checkConnection();
+            if (connected) clearInterval(retry);
         }, 15000);
     }
 }
