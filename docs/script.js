@@ -1,6 +1,4 @@
-// ==========================================
-// EnglishLearn - script.js (versión corregida)
-// ==========================================
+// EnglishLearn - script.js
 
 const micButton = document.getElementById('micButton');
 const micText = document.getElementById('micText');
@@ -14,18 +12,14 @@ let isListening = false;
 let recognition = null;
 let sessionId = 'session_' + Date.now();
 let isProcessing = false;
-let hasSpoken = false;       // Solo empezar palabras cuando el usuario habló
+let hasSpoken = false;
 let wordInterval = null;
 
-// ==========================================
-// CONEXIÓN
-// ==========================================
+// ── CONEXIÓN ──────────────────────────────────────────────────
 async function checkConnection() {
     try {
-        const response = await fetch(`${CONFIG.API_URL}/`, {
-            signal: AbortSignal.timeout(10000)
-        });
-        if (response.ok) {
+        const res = await fetch(`${CONFIG.API_URL}/`, { signal: AbortSignal.timeout(10000) });
+        if (res.ok) {
             connectionStatus.textContent = '✅ Conectado';
             connectionStatus.className = 'connection-status connected';
             micButton.disabled = false;
@@ -43,9 +37,7 @@ async function checkConnection() {
     return false;
 }
 
-// ==========================================
-// VOZ
-// ==========================================
+// ── VOZ ───────────────────────────────────────────────────────
 function initRecognition() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
@@ -67,9 +59,7 @@ function initRecognition() {
     recognition.onend = () => {
         isListening = false;
         micButton.classList.remove('listening');
-        if (!isProcessing) {
-            micText.textContent = '🎤 PRESIONA PARA HABLAR';
-        }
+        if (!isProcessing) micText.textContent = '🎤 PRESIONA PARA HABLAR';
     };
 
     recognition.onresult = async (event) => {
@@ -86,14 +76,12 @@ function initRecognition() {
         } else if (event.error === 'not-allowed') {
             status.textContent = '❌ Permiso de micrófono denegado. Actívalo en configuración del navegador.';
         } else {
-            status.textContent = 'Error de voz: ' + event.error;
+            status.textContent = 'Error: ' + event.error;
         }
     };
 }
 
-// ==========================================
-// ENVIAR MENSAJE
-// ==========================================
+// ── ENVIAR MENSAJE ────────────────────────────────────────────
 async function sendMessage(text) {
     if (!text || !text.trim() || isProcessing) return;
 
@@ -102,7 +90,6 @@ async function sendMessage(text) {
     micText.textContent = '⏳ Procesando...';
     status.textContent = 'Tu tutor está pensando...';
     hideSuggestions();
-
     addUserMessage(text);
 
     try {
@@ -114,13 +101,13 @@ async function sendMessage(text) {
         });
 
         if (!res.ok) {
-            const errData = await res.json().catch(() => ({}));
-            throw new Error(errData.error || `Error ${res.status}`);
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || `Error ${res.status}`);
         }
 
         const data = await res.json();
 
-        // Corrección primero (si hay)
+        // Mostrar corrección si hay
         if (data.correction && data.correction.trim() && data.correction.toUpperCase() !== 'NONE') {
             addCorrectionMessage(data.correction);
         }
@@ -130,7 +117,7 @@ async function sendMessage(text) {
             addTutorMessage(data.english, data.spanish || '');
         }
 
-        // Sugerencias de respuesta
+        // Sugerencias
         if (data.suggestions && data.suggestions.length > 0) {
             displaySuggestions(data.suggestions);
         }
@@ -138,9 +125,8 @@ async function sendMessage(text) {
         // Audio
         if (data.audio) {
             try {
-                const audio = new Audio('data:audio/mp3;base64,' + data.audio);
-                audio.play();
-            } catch (e) { /* audio error silencioso */ }
+                new Audio('data:audio/mp3;base64,' + data.audio).play();
+            } catch (e) {}
         }
 
         // Activar palabras de práctica después de primera interacción
@@ -152,11 +138,11 @@ async function sendMessage(text) {
         status.textContent = '🎤 Presiona para responder';
 
     } catch (err) {
-        console.error('Error sendMessage:', err);
+        console.error('Error:', err);
         status.textContent = '❌ Error: ' + err.message;
         addTutorMessage(
-            "Sorry, there was a connection problem. Please try again!",
-            "Lo siento, hubo un problema de conexión. ¡Intenta de nuevo!"
+            "Sorry, there was a problem. Please try again!",
+            "Lo siento, hubo un problema. ¡Intenta de nuevo!"
         );
     } finally {
         isProcessing = false;
@@ -165,16 +151,11 @@ async function sendMessage(text) {
     }
 }
 
-// ==========================================
-// MENSAJES
-// ==========================================
+// ── MENSAJES EN CHAT ──────────────────────────────────────────
 function addUserMessage(text) {
     const d = document.createElement('div');
     d.className = 'message user';
-    d.innerHTML = `<div class="message-content">
-        <span class="message-label">Tú</span>
-        ${esc(text)}
-    </div>`;
+    d.innerHTML = `<div class="message-content"><span class="message-label">Tú</span>${esc(text)}</div>`;
     chatContainer.appendChild(d);
     scrollChat();
 }
@@ -194,10 +175,7 @@ function addTutorMessage(english, spanish) {
 function addCorrectionMessage(text) {
     const d = document.createElement('div');
     d.className = 'message correction';
-    d.innerHTML = `<div class="message-content">
-        <span class="message-label">✏️ Corrección</span>
-        ${esc(text)}
-    </div>`;
+    d.innerHTML = `<div class="message-content"><span class="message-label">✏️ Corrección</span>${esc(text)}</div>`;
     chatContainer.appendChild(d);
     scrollChat();
 }
@@ -211,7 +189,7 @@ function addWordNotif(word) {
         <span class="message-label">💬 Palabra para practicar</span>
         ¿Cómo se dice <strong>"${esc(word.es)}"</strong> en inglés?
         <div class="message-translation">💡 Contexto: ${esc(word.contexto)}</div>
-        <button class="reveal-btn" onclick="revealWord('${id}', '${esc(word.en)}')">Ver respuesta</button>
+        <button class="reveal-btn" onclick="revealWord('${id}','${esc(word.en)}')">Ver respuesta</button>
     </div>`;
     chatContainer.appendChild(d);
     scrollChat();
@@ -228,22 +206,16 @@ function revealWord(id, answer) {
     el.querySelector('.message-content').appendChild(rev);
 }
 
-// ==========================================
-// SUGERENCIAS
-// ==========================================
+// ── SUGERENCIAS ───────────────────────────────────────────────
 function displaySuggestions(suggestions) {
     suggestionsGrid.innerHTML = '';
     suggestionsContainer.style.display = 'block';
-
     suggestions.forEach(s => {
-        // Limpiar número al inicio: "1. texto | traduccion"
         const clean = s.replace(/^\d+\.\s*/, '');
         const parts = clean.split('|');
         const eng = parts[0].trim();
         const esp = parts[1] ? parts[1].trim() : '';
-
         if (!eng) return;
-
         const card = document.createElement('div');
         card.className = 'suggestion-card';
         card.onclick = () => sendMessage(eng);
@@ -260,9 +232,7 @@ function hideSuggestions() {
     suggestionsGrid.innerHTML = '';
 }
 
-// ==========================================
-// PALABRAS DE PRÁCTICA (solo después de hablar)
-// ==========================================
+// ── PALABRAS DE PRÁCTICA ──────────────────────────────────────
 async function showWordNotification() {
     try {
         const res = await fetch(`${CONFIG.API_URL}/api/palabra-del-dia`);
@@ -275,43 +245,11 @@ async function showWordNotification() {
 }
 
 function startWordNotifications() {
-    if (wordInterval) return; // ya está corriendo
-    // Primera palabra a los 3 minutos, luego cada 3 min
+    if (wordInterval) return;
     wordInterval = setInterval(showWordNotification, 3 * 60 * 1000);
 }
 
-// ==========================================
-// RESET
-// ==========================================
-document.getElementById('resetBtn')?.addEventListener('click', async () => {
-    try {
-        await fetch(`${CONFIG.API_URL}/api/reset`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: sessionId })
-        });
-    } catch (e) {}
-
-    // Nuevo sessionId
-    sessionId = 'session_' + Date.now();
-    hasSpoken = false;
-    if (wordInterval) { clearInterval(wordInterval); wordInterval = null; }
-
-    chatContainer.innerHTML = '';
-    hideSuggestions();
-    addTutorMessage(
-        "Hello! Let's start a new conversation. How are you today?",
-        "¡Hola! Empecemos una nueva conversación. ¿Cómo estás hoy?"
-    );
-    status.textContent = 'Listo — presiona el botón y habla en inglés';
-});
-
-// Botón de palabra manual
-document.getElementById('wordBtn')?.addEventListener('click', showWordNotification);
-
-// ==========================================
-// BOTÓN MIC
-// ==========================================
+// ── BOTONES ───────────────────────────────────────────────────
 micButton.addEventListener('click', () => {
     if (!recognition) {
         status.textContent = '❌ Reconocimiento de voz no disponible. Usa Chrome.';
@@ -320,16 +258,34 @@ micButton.addEventListener('click', () => {
     if (isListening) {
         recognition.stop();
     } else if (!isProcessing) {
-        try { recognition.start(); } catch (e) { status.textContent = 'Error al activar micrófono: ' + e.message; }
+        try { recognition.start(); } catch (e) { status.textContent = 'Error: ' + e.message; }
     }
 });
 
-// ==========================================
-// UTILIDADES
-// ==========================================
-function scrollChat() {
-    chatContainer.scrollTop = chatContainer.scrollHeight;
-}
+document.getElementById('resetBtn')?.addEventListener('click', async () => {
+    try {
+        await fetch(`${CONFIG.API_URL}/api/reset`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: sessionId })
+        });
+    } catch (e) {}
+    sessionId = 'session_' + Date.now();
+    hasSpoken = false;
+    if (wordInterval) { clearInterval(wordInterval); wordInterval = null; }
+    chatContainer.innerHTML = '';
+    hideSuggestions();
+    addTutorMessage(
+        "Hello! Let's start fresh. How are you today?",
+        "¡Hola! Empecemos de nuevo. ¿Cómo estás hoy?"
+    );
+    status.textContent = 'Listo — presiona el botón y habla en inglés';
+});
+
+document.getElementById('wordBtn')?.addEventListener('click', showWordNotification);
+
+// ── UTILS ─────────────────────────────────────────────────────
+function scrollChat() { chatContainer.scrollTop = chatContainer.scrollHeight; }
 
 function esc(text) {
     if (!text) return '';
@@ -338,18 +294,13 @@ function esc(text) {
     return d.innerHTML;
 }
 
-// ==========================================
-// INIT
-// ==========================================
+// ── INIT ──────────────────────────────────────────────────────
 async function init() {
     initRecognition();
     const ok = await checkConnection();
-
     if (!ok) {
-        // Render duerme — reintentar cada 15s
         const retry = setInterval(async () => {
-            const connected = await checkConnection();
-            if (connected) clearInterval(retry);
+            if (await checkConnection()) clearInterval(retry);
         }, 15000);
     }
 }
